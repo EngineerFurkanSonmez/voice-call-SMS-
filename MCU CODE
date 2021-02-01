@@ -9,12 +9,12 @@ SoftwareSerial Sim800(10,11);
 
 bool fault ;
 bool fire ;
-int c;
+long int c;
 
 
-const int repeat = 5;
+const int repeat = 5;        // number of repeat voice record in phone
 const int voice_periode = 5; // in seconds
-const int ringing_limit = 2; //in seconds
+const int ringing_limit = 2; // in seconds
 
 
 void setup() {
@@ -23,12 +23,6 @@ Serial.begin(9600);
 delay(100);
 Sim800.begin(9600);
 c=0;  
-
-/*
-int eepromBellek = EEPROM.length();
-  for (int i = 0 ; i < eepromBellek ; i++) {
-    EEPROM.write(i, '\0');}
-*/
   
 pinMode(FaultPin,INPUT_PULLUP);
 pinMode(FirePin,INPUT_PULLUP);
@@ -37,27 +31,8 @@ delay(500);
 
 Serial.println("Seriport Basladı...");
 Serial.flush();
-/*
-
-    Sim800.println("AT");
-    while( !Sim800.available() );
-    
-    if( Sim800.available() ){
-      str=Sim800.readString(); 
-      Serial.println(str);      }
-   
-   
- if(str.indexOf("OK")){
-    Serial.println("DELOYLOY DEOLOYLOY");   }
- else{ 
-    Serial.println("bokksdfhbsd");          }
-  
-*/
  
-
-
 //fire=0;   
-
 //calling(1);
 }
 
@@ -67,7 +42,7 @@ c++;
 Serial.println(c);
 Serial.flush();
 delay(50);
-if (c > 5000) {c=0;}
+//if (c > 5000) {c=0;}
 
 
 if(digitalRead(FirePin)==0){
@@ -111,7 +86,7 @@ while(1){
 }
 
 void simple(){
-  Sim800.println("ATD+905356701121;");
+  Sim800.println("ATD+905xxxxxxxxx;");
   Sim800.flush();
   delay(30000);
   Sim800.println("AT+CREC=4,\"C:\\User\\m-yangin.amr\",0,100");
@@ -142,7 +117,7 @@ void message(bool olay){
   
   Sim800.println("AT+CMGF=1");  
   delay(1000); 
-  Sim800.println("AT+CMGS=\"+905356701121\"\r"); 
+  Sim800.println("AT+CMGS=\"+905xxxxxxxxx\"\r"); 
   delay(1000);
   if(olay){
       Sim800.println("YANGIN VAR");  }
@@ -162,13 +137,9 @@ void calling(bool olay){
   boolean flag2=false;
   boolean flag3=false;
   
-
-
  delay(10);
- Sim800.println("ATD+905356701121;");
+ Sim800.println("ATD+905xxxxxxxx;");
  Sim800.flush();
-
-
 
 delay(100);
   
@@ -193,7 +164,7 @@ while(1){   //to wait answer
       break;}
 }
 
-if(feedbackc.indexOf(   "BUSY"  )>=0 ) { Serial.println("megulmus pasam");Serial.flush();}
+if(feedbackc.indexOf(   "BUSY"  )>=0 ) { Serial.println(" BUSY ");Serial.flush();}
 
 if(feedbackc.indexOf(   "OK"  )>=0 && timeout_<20000 ){
   Serial.println("ANSWERED...");

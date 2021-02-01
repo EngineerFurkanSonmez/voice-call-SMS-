@@ -29,7 +29,7 @@ pinMode(FirePin,INPUT_PULLUP);
 
 delay(500);
 
-Serial.println("Seriport Basladı...");
+Serial.println("Started...");
 Serial.flush();
  
 //fire=0;   

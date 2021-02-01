@@ -1,0 +1,223 @@
+#include <SoftwareSerial.h>
+#include <EEPROM.h>
+#include <String.h>
+
+SoftwareSerial Sim800(10,11);
+
+#define FaultPin 3    // FAULT DETECTION PIN
+#define FirePin 4     // FIRE DETECTION PIN
+
+bool fault ;
+bool fire ;
+int c;
+
+
+const int repeat = 5;
+const int voice_periode = 5; // in seconds
+const int ringing_limit = 2; //in seconds
+
+
+void setup() {
+delay(100);
+Serial.begin(9600);
+delay(100);
+Sim800.begin(9600);
+c=0;  
+
+/*
+int eepromBellek = EEPROM.length();
+  for (int i = 0 ; i < eepromBellek ; i++) {
+    EEPROM.write(i, '\0');}
+*/
+  
+pinMode(FaultPin,INPUT_PULLUP);
+pinMode(FirePin,INPUT_PULLUP);
+
+delay(500);
+
+Serial.println("Seriport Basladı...");
+Serial.flush();
+/*
+
+    Sim800.println("AT");
+    while( !Sim800.available() );
+    
+    if( Sim800.available() ){
+      str=Sim800.readString(); 
+      Serial.println(str);      }
+   
+   
+ if(str.indexOf("OK")){
+    Serial.println("DELOYLOY DEOLOYLOY");   }
+ else{ 
+    Serial.println("bokksdfhbsd");          }
+  
+*/
+ 
+
+
+//fire=0;   
+
+//calling(1);
+}
+
+void loop() {
+  
+c++;
+Serial.println(c);
+Serial.flush();
+delay(50);
+if (c > 5000) {c=0;}
+
+
+if(digitalRead(FirePin)==0){
+  Serial.println("YANGIN...");
+  Serial.flush();
+  calling ( 1 );   // 0 -->  FAULT      1--> FIRE
+  Sim800.flush();
+  delay(1000);
+  message ( 1 );   // 0 -->  FAULT      1--> FIRE
+  Sim800.flush();
+  //simple();
+  }
+
+if(digitalRead(FaultPin)==0){
+  Serial.println("HATA...");
+  Serial.flush();
+  calling ( 0 );   // 0 -->  FAULT      1--> FIRE
+  Sim800.flush();
+  delay(1000);
+  message ( 0 );   // 0 -->  FAULT      1--> FIRE
+  Sim800.flush();
+  }
+
+
+/*
+ while(Sim800.available()){
+  Serial.write(Sim800.read());
+ }
+ while(Serial.available()){
+ Sim800.write(Serial.read());
+ }
+*/
+
+}
+
+void debug(){
+while(1){
+  if(Sim800.available()){Serial.write(Sim800.read());}
+  if(Serial.available()){Sim800.write(Serial.read());}   
+}
+}
+
+void simple(){
+  Sim800.println("ATD+905356701121;");
+  Sim800.flush();
+  delay(30000);
+  Sim800.println("AT+CREC=4,\"C:\\User\\m-yangin.amr\",0,100");
+    Sim800.flush();
+    delay(5000);
+      Sim800.println("ATH");
+}
+
+boolean Sim800SendCommand(String command){
+  boolean successFlag= false;
+  String feedbackm="";
+  //long int timeout_=0;
+  Sim800.println(command);
+  Sim800.flush();
+
+  //while(!successFlag){timeout_++;delay(1);if(timeout_>15000)break;}
+  while(Sim800.available()){
+    char m=Sim800.read();
+    feedbackm+=m;
+    delay(2);              }
+  if(feedbackm.indexOf(   "OK"  )>=0 ){ successFlag= true;  }
+  if(feedbackm.indexOf( "ERROR" )>=0 ){ return false;       }
+  feedbackm.remove(0);
+  if(successFlag) return  true; else return false;  
+}
+
+void message(bool olay){
+  
+  Sim800.println("AT+CMGF=1");  
+  delay(1000); 
+  Sim800.println("AT+CMGS=\"+905356701121\"\r"); 
+  delay(1000);
+  if(olay){
+      Sim800.println("YANGIN VAR");  }
+  else{
+      Sim800.println("HATA VAR");    }
+      
+  delay(100);
+  Sim800.println((char)26);
+  Sim800.flush();
+  delay(5000);
+}
+
+void calling(bool olay){
+  String feedbackc="";
+  long int timeout_=0;
+  boolean flag1=false;
+  boolean flag2=false;
+  boolean flag3=false;
+  
+
+
+ delay(10);
+ Sim800.println("ATD+905356701121;");
+ Sim800.flush();
+
+
+
+delay(100);
+  
+while(1){   //to wait answer
+    timeout_++;
+    delay(1);
+    if(timeout_%1000==0) {Serial.println("CALLING.. "); Serial.flush();}
+    while(Sim800.available()>0){
+      char m=Sim800.read();
+      feedbackc+=m;
+      delay(2);}
+      
+    if(feedbackc.indexOf("OK")>0)   {delay(100); timeout_=0;  break;}
+    if(feedbackc.indexOf("BUSY")>0) {delay(100); timeout_=0; break;}
+    if(timeout_>20000){
+      Sim800.println("ATH");
+      Sim800.flush();
+      delay(100);
+      Serial.println("NO ANSWER...");
+      Serial.flush();
+      delay(10);
+      break;}
+}
+
+if(feedbackc.indexOf(   "BUSY"  )>=0 ) { Serial.println("megulmus pasam");Serial.flush();}
+
+if(feedbackc.indexOf(   "OK"  )>=0 && timeout_<20000 ){
+  Serial.println("ANSWERED...");
+  Serial.flush();
+  feedbackc.remove(0);
+
+  if(olay == true ){ 
+      for(int x=0;x<repeat;x++){
+        Sim800.println("AT+CREC=4,\"C:\\User\\m-yangin.amr\",0,100");
+        Sim800.flush();
+        delay(voice_periode*1000);}
+  }
+  else{
+      for( int x=0;x<repeat;x++){
+        Sim800.println("AT+CREC=4,\"C:\\User\\m-hata.amr\",0,100");
+        Sim800.flush();
+        delay(voice_periode*1000);}  
+  }
+
+  Sim800.println("ATH");
+  Sim800.flush();
+  delay(100);
+}
+
+timeout_=0;
+
+}

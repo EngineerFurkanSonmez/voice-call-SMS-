@@ -1,0 +1,964 @@
+//         EYSA TECHNOLOGY
+//         13.02.2021
+//         EYSA GSM
+//
+//
+
+//
+//
+// AT+CREC=4,\"C:\\User\\m-yangin.amr\",0,100
+// AT+CREC=4,\"C:\\User\\m-hata.amr\",0,100
+// AT+CREC=4,\"C:\\User\\yangn.amr\",0,100
+// AT+CREC=4,\"C:\\User\\hata.amr\",0,100
+// AT+CREC=4,\"C:\\User\\yanginbitti.amr\",0,100
+// AT+CREC=4,\"C:\\User\\hatabitti.amr\",0,100
+// AT+CREC=4,\"C:\\User\\elektrikvar.amr\",0,100
+// AT+CREC=4,\"C:\\User\\elektrikyok.amr\",0,100
+
+#include <Arduino.h>
+#include <avr/wdt.h>
+#include <SoftwareSerial.h>
+#include <String.h>
+#include <AltSoftSerial.h>
+
+SoftwareSerial Sim800(3,2);  //RX  TX
+AltSoftSerial  RS485(8,9);  //RX  TX
+
+#define FaultPin 4    // FAULT DETECTION PIN
+#define FirePin 5     // FIRE DETECTION PIN
+#define PowerPin 6    // POWER DETECTION PIN
+#define CoverPin 7    // COVER DETECTION PIN
+#define BuzzerPin 11    // BUZZER PN
+
+#define RS485enPin 10   // FAULT ENABLE PIN
+#define FaultENpin  A0   // FAULT ENABLE PIN
+#define FireENpin   A2  // FIRE ENABLE PIN
+#define CoverENpin  A4  // COVER ENABLE PIN
+
+boolean fault_pre ;   
+boolean fire_pre ;
+boolean power_pre ;
+boolean cover_pre ;
+
+boolean FaultEN = true;
+boolean FireEN  = true;
+boolean CoverEN = true;
+
+long int c;                         // Counter Parameter
+int wait =0;
+int calltry =1;         
+
+const int calltrylimit = 1;         // Number of Calling Same Number Consequently
+const int repeat = 5;               // Number of Voice Record Repeat
+const int voice_periode = 5;        // In seconds
+const int ringing_limit = 20;       // In seconds
+const int gprs_limit= 1;            // Number of GPRS connection attempt
+const boolean powerenabler= false;  // Enable Status of POWER detection   false->disable  true->enable
+
+const String number1= "+90xxxxxxxxxx";
+// String number2= "+90xxxxxxxxxx";
+const String name= "xxxx TEKNOLOJI";
+String RS485buffer ="";
+String pre_RS485buffer ="";
+
+
+void message(int olay , String number);
+void calling(int olay , String number);
+void sendGPRS(int olay,String name);
+void get_enable_status();
+void getRS485();
+
+boolean rejectincomingCalls();
+boolean allowincomingCalls();
+boolean checkandregister();
+boolean Sim800SendCommand( String command );
+
+boolean openGPRS();
+boolean HTTPINIT();
+boolean HTTPTERM();
+
+
+void setup(){
+
+  Serial.begin(19200);
+  RS485.begin(19200);
+  Sim800.begin(9600);
+
+ 
+
+  delay(2000);
+  Serial.println(name);
+  Serial.flush();
+  wdt_enable( WDTO_8S );
+  delay(1000);  //ENABLE WATCHDOG TIMER FOR 8 seconds
+
+
+  fire_pre  = true;
+  fault_pre = true;
+  power_pre = true;
+  cover_pre = true;
+
+  pinMode(FaultPin,INPUT_PULLUP);
+  pinMode(FirePin,INPUT_PULLUP);
+  pinMode(PowerPin,INPUT);
+  pinMode(CoverPin,INPUT_PULLUP);
+
+  pinMode(FaultENpin,INPUT_PULLUP);
+  pinMode(FireENpin,INPUT_PULLUP);
+  pinMode(CoverENpin,INPUT_PULLUP);
+  pinMode(BuzzerPin, OUTPUT);
+  pinMode(A1,OUTPUT);
+  pinMode(A3,OUTPUT);
+  pinMode(A5,OUTPUT);
+  wdt_reset();
+  delay(1000);
+  digitalWrite(A1,LOW);
+  digitalWrite(A3,LOW);
+  digitalWrite(A5,LOW);
+  delay(1000);
+  get_enable_status();
+  Sim800SendCommand( F("AT+CIURC=0")   );  // closing indication of "CALL ready SMS ready" when Sim800 is powered
+  delay(1000);
+  Sim800SendCommand( F("AT+COLP=1")    );
+  delay(1000);
+  if(rejectincomingCalls()){           
+    //Serial.println("Auto-Reject ENABLED");
+    //Serial.flush();
+  }
+  else{
+    //Serial.println("Auto-Reject can NOT be enabled");
+    //Serial.flush();
+  }
+  delay(1000);
+  wdt_reset();
+  Sim800SendCommand( F("AT+SAPBR=0,1") );
+  delay(1000);
+  wdt_reset();
+  checkandregister();
+  delay(1000);
+
+  message(8,number1);
+  delay(100);
+  sendGPRS(8,name);
+
+  c=0;  
+
+  delay(2000);
+
+
+  wdt_reset();
+  Serial.println("System");
+  Serial.flush();
+
+  delay(4000);
+  wdt_reset();
+
+  Serial.println("Started...");
+  Serial.flush();
+
+  delay(4000);
+
+}
+
+void loop() {
+  
+  wdt_reset();
+  
+  c++;
+
+  getRS485();
+
+  get_enable_status();
+
+  if(digitalRead(FirePin)== HIGH  && fire_pre == false && FireEN){
+    Serial.println("YANGIN BITTI");
+    Serial.flush();
+    calling(3,number1);
+    wdt_reset();
+    delay(500);
+    message(3,number1);
+    wdt_reset();
+    delay(500);
+    sendGPRS(3,name);
+    wdt_reset();
+    delay(1000);
+  }
+
+  if(digitalRead(FaultPin)== HIGH  && fault_pre == false && FaultEN){
+    Serial.println("HATA BITTI");
+    Serial.flush();
+    calling(4,number1);
+    wdt_reset();
+    delay(500);
+    message(4,number1);
+    wdt_reset();
+    delay(500);
+    sendGPRS(4,name);
+    wdt_reset();
+    delay(1000);
+  }
+
+  if(digitalRead(PowerPin)== HIGH  && power_pre == false && powerenabler==true){
+    Serial.println("ELEKTRIK GELDI");
+    Serial.flush();
+    calling(5,number1);
+    wdt_reset();
+    delay(500);
+    message(5,number1);
+    wdt_reset();
+    delay(500);
+    sendGPRS(5,name);
+    wdt_reset();
+    delay(1000);
+  }
+
+    if(digitalRead(CoverPin)== HIGH  && cover_pre == false && CoverEN ){
+    noTone(BuzzerPin);
+    Serial.println("KAPAK KAPANDI");
+    Serial.flush();
+    calling(7,number1);
+    wdt_reset();
+    delay(500);
+    message(7,number1);
+    wdt_reset();
+    delay(500);
+    sendGPRS(7,name);
+    wdt_reset();
+    delay(1000);
+  }
+
+
+  if(digitalRead(FirePin)==HIGH && FireEN){
+    fire_pre =true;
+  }
+  if(digitalRead(FaultPin)==HIGH && FaultEN){
+    fault_pre =true;
+  }
+  if(digitalRead(PowerPin)==HIGH && powerenabler==true){
+    power_pre=true;
+  }
+  if(digitalRead(CoverPin)==HIGH && CoverEN){
+    cover_pre=true;
+  }
+  delay(50);
+
+
+
+  if(digitalRead(FirePin)== LOW  && fire_pre == true && FireEN){
+    Serial.println("YANGIN");
+    Serial.flush();
+    wdt_reset();
+    calling ( 1 ,number1);          // 0 -->  FAULT      1--> FIRE
+    delay(500);
+    wdt_reset();
+    message ( 1 ,number1);          // 0 -->  FAULT      1--> FIRE
+    delay(500);
+    sendGPRS(1,name);
+    fire_pre = false;
+  }
+
+  if(digitalRead(FaultPin)== LOW && fault_pre == true && FaultEN){
+
+    Serial.println("HATA");
+    Serial.flush();
+    wdt_reset();
+    calling ( 0 ,number1);       // 0 -->  FAULT      1--> FIRE     2-->POWER    3-->STATE
+    delay(500);
+    wdt_reset();
+    message ( 0 , number1 );   // 0 -->  FAULT      1--> FIRE     2-->POWER    3-->STATE
+    delay(500);
+    wdt_reset();
+    sendGPRS(0,name);
+    fault_pre = false;
+
+  }
+
+  if( digitalRead(PowerPin)== LOW && power_pre == true && powerenabler==true){
+
+    Serial.println("POWER GONE");
+    Serial.flush();
+    wdt_reset();
+    calling( 2 , number1 );
+    delay(500);
+    wdt_reset();
+    message( 2 , number1 );
+    delay(500);
+    wdt_reset();
+    sendGPRS(2, name );
+    power_pre=false;
+  }
+
+  if(digitalRead(CoverPin)== LOW && cover_pre == true && CoverEN){ 
+    tone(BuzzerPin,1000);
+    Serial.println("KAPAK ACILDI...");
+    Serial.flush();
+    calling ( 6 ,number1);      
+    wdt_reset();
+    delay(500);
+    message ( 6 , number1 );  
+    wdt_reset();
+    delay(500);
+    sendGPRS( 6 ,name);
+    wdt_reset();
+    cover_pre = false;
+
+  }
+
+
+}
+
+
+//##############################################################################
+//##############################################################################
+//##############################################################################
+//##############################################################################
+// Function name getRS485()
+// Function type void
+void getRS485(){
+
+  RS485buffer.remove(0);
+  int RS485buffersize=0;
+
+  while(RS485.available()>0){
+    char x= RS485.read();
+    if(x=='\n'){
+      break;
+    }
+    if(RS485buffersize<=15){
+      RS485buffer+=x; 
+      RS485buffersize++;
+    }
+    delay(1);
+  }
+
+  RS485buffer.remove(RS485buffersize);
+
+  if(RS485buffer.indexOf("Alarm[")>=0){
+    Serial.print("YANGN-->>");
+    RS485buffer=RS485buffer.substring(7,15);
+    Serial.println(RS485buffer);
+
+    if(RS485buffer.equals(pre_RS485buffer)==false){
+      message(9,number1);
+      delay(100);
+      calling(1,number1);
+      delay(1000);
+      sendGPRS(9,name);
+      pre_RS485buffer =RS485buffer;
+    }
+    RS485buffer.remove(0);
+  }
+
+    if(RS485buffer.indexOf("FAULT[")>=0){
+      Serial.print("HATA-->>");
+      RS485buffer=RS485buffer.substring(7,15);
+      Serial.println(RS485buffer);
+      if(RS485buffer.equals(pre_RS485buffer)==false){
+        message(10,number1);
+        delay(100);
+        calling(0,number1);
+        delay(1000);
+        sendGPRS(10,name);
+        pre_RS485buffer = RS485buffer;
+      }
+      RS485buffer.remove(0);
+  }
+
+
+  //Serial.print("---\n");
+  //Serial.println(RS485buffer);
+  //Serial.print("***\n\n");
+  //Serial.flush();
+  RS485buffer.remove(0);
+
+}
+
+
+
+
+//##############################################################################
+//##############################################################################
+// Function name Sim800SendCommand()
+// Function type boolean
+
+boolean Sim800SendCommand(String command){
+  boolean successFlag= false;
+  String feedbackm="";
+  long int timeout_=0;
+  Sim800.println(command);
+  Sim800.flush();
+  while(timeout_<3000){
+ 
+    while(Sim800.available()){
+      char m=Sim800.read();
+      feedbackm+=m;
+      delay(2);              
+    }
+
+    if(feedbackm.indexOf(   "OK"  )>=0 ){ successFlag= true;  }
+    if(feedbackm.indexOf( "ERROR" )>=0 ){ return false;       }
+    feedbackm.remove(0);
+    if(successFlag) return  true; 
+    timeout_++;
+    delay(1);
+  }
+  wdt_reset();
+  return false;
+}
+
+//##############################################################################
+//##############################################################################
+// Function name message()
+// Function type void
+void message(int olay , String number){
+  
+  Sim800.println("AT+CMGF=1");
+  delay(1000); 
+  Sim800.print("AT+CMGS=\"");
+  Sim800.print(number);
+  Sim800.println("\"\r");
+  delay(1000);
+
+  if(olay==0){
+    Sim800.println("HATA VAR");
+  }
+  else if(olay==1){
+    Sim800.println("YANGIN VAR");    
+  }
+  else if(olay==2){
+    Sim800.println("ELEKTRIK KESILDI"); 
+  }
+  else if(olay==3){
+    Sim800.println("YANGIN BITTI"); 
+  }
+  else if(olay==4){
+    Sim800.println("HATA BITTI"); 
+  }
+  else if(olay==5){
+    Sim800.println("ELEKTRIK GELDI"); 
+  }
+  else if(olay==6){
+    Sim800.println("KAPAK ACILDI"); 
+  }
+  else if(olay==7){
+    Sim800.println("KAPAK KAPANDI");
+  }
+  else if (olay==8){
+    Sim800.println("RESET ATILDI");
+  }
+  else if (olay==9){
+    Sim800.print("YANGIN ");
+    Sim800.println(RS485buffer);
+  }
+  else{
+    Sim800.print("HATA ");
+    Sim800.println(RS485buffer);
+  }
+
+  delay(100);
+  Sim800.println((char)26);
+  Sim800.flush();
+  wdt_reset();
+  delay(5000);
+
+
+}
+
+
+//##############################################################################
+//##############################################################################
+// Function name calling()
+// Function type void
+
+void calling(int olay, String number){
+  
+  String feedbackc="";
+  long int timeout_=0;
+  checkandregister();
+
+  delay(1000);
+
+  Sim800.print(F("ATD"));
+  Sim800.print(number);
+  Sim800.println(F(";"));
+  Sim800.flush();
+  wdt_reset();
+  delay(10);
+  
+  while(1){ //to wait answer
+    timeout_++;
+    delay(1);
+
+    while(Sim800.available()>0){
+      char m=Sim800.read();
+      feedbackc+=m;
+      delay(2);
+    }
+
+    if(timeout_%1000==0) {
+      Serial.println("RINGING..."); 
+      Serial.flush(); 
+      wdt_reset();
+    } 
+    if(feedbackc.indexOf(   "+COLP:"  )>=0 && (ringing_limit*1000) ){
+      delay(100); 
+      Serial.println("neloyoyaaaa");
+      Serial.flush(); 
+      wdt_reset(); 
+      break;
+    }
+    else if(feedbackc.indexOf("BUSY")>0) {
+      delay(100);
+      Serial.println("BUSY");
+      Serial.flush(); 
+      timeout_=0; 
+      break;
+    }
+    if(feedbackc.indexOf("ERROR")>0)     {
+      delay(100);
+      //Serial.println("ERROR");
+      //Serial.flush(); 
+      timeout_=0; 
+      break;
+    }
+    if(feedbackc.indexOf("NO CARRIER")>0){
+      wdt_reset();
+      delay(100);
+      Serial.println("NO CARRIER");
+      Serial.flush(); 
+      timeout_=0;
+      if(calltry<calltrylimit){
+        calltry++;
+        wdt_reset();
+        delay(5000);
+        wdt_reset();
+        delay(5000);
+        wdt_reset();
+        delay(5000);
+        wdt_reset();
+        calling(olay,number);
+      }
+      calltry=1;
+      break;
+    } 
+    if(timeout_>(ringing_limit*1000)){
+      wdt_reset();
+      Sim800.println("ATH");
+      Sim800.flush();
+      delay(100);
+      Serial.println("NO ANSWER...");
+      Serial.flush();
+      delay(10);
+      break;
+    }
+    feedbackc.remove(0);
+  }
+
+
+
+
+  if(feedbackc.indexOf(   "OK"  )>=0 && 1000< timeout_< (ringing_limit*1000) ){
+    timeout_=0;
+    Serial.println("ANSWERED...");
+    Serial.flush();
+    feedbackc.remove(0);
+    wdt_reset();
+
+  
+    for(int x=0;x<repeat;x++){
+    
+      Sim800.print("AT+CREC=4,\"C:\\User\\");
+      if(olay==0 || olay==10) Sim800.print("hata");
+      if(olay==1 || olay==9) Sim800.print("yangn");
+      if(olay==2) Sim800.print("elektrikyok");
+      if(olay==3) Sim800.print("yanginbitti");
+      if(olay==4) Sim800.print("hatabitti");
+      if(olay==5) Sim800.print("elektrikvar");
+      if(olay==6) Sim800.print("kapakacik");
+      if(olay==7) Sim800.print("kapakkapali");
+      Sim800.println(+".amr\",0,100");
+      Sim800.flush();
+
+      while(Sim800.available()>0){
+        char m=Sim800.read();
+        feedbackc+=m;
+        delay(2);
+      }
+
+      if (feedbackc.indexOf("NO CARRIER")>0){Serial.println("HOPPALA");Serial.flush(); feedbackc.remove(0); break;}
+      wdt_reset();
+      delay(voice_periode*1000);
+      wdt_reset();
+
+    }
+
+   Sim800.println("ATH");
+    Sim800.flush();
+    delay(100);
+  }
+   feedbackc.remove(0);
+    timeout_=0;
+
+}
+
+//##############################################################################
+//##############################################################################
+// Function name opemGPRS()
+// Function type boolean
+
+boolean openGPRS(){
+  long int attempt=0;
+  boolean aflg=false;
+  boolean bflg=false;
+  boolean cflg=false;
+  
+  String feedbackm="";
+  
+  Serial.println("OPEN GPRS");
+  Serial.flush();
+
+  wdt_reset();
+
+  while(!aflg){
+    if(Sim800SendCommand(F("AT+SAPBR=3,1,\"CONTYPE\",\"GPRS\""))){
+
+      Serial.println("SAPBR=3,1 CONYPE GPRS");
+      Serial.flush();
+
+      aflg=true;
+      attempt++;
+      delay(1);
+    }
+    if(attempt>1)break;
+  }
+  attempt=0;
+  wdt_reset();
+  delay(2000);
+  wdt_reset();
+
+  while(!bflg){
+    if(Sim800SendCommand(F("AT+SAPBR=3,1,\"APN\",\"internet\""))){
+
+      Serial.println("3,1,APN,internet");
+      Serial.flush();
+
+      bflg=true;
+      attempt++;
+      delay(1);
+    }
+    else{
+      wdt_reset();
+      delay(5000);
+      wdt_reset();
+      Sim800.println("AT+SAPBR=0,1");
+      Sim800.flush();
+    }
+    if(attempt>1)break;
+  }
+  attempt=0;
+  wdt_reset();
+  delay(4000);
+  wdt_reset();
+
+  while(!cflg){
+    if(Sim800SendCommand(F("AT+SAPBR=1,1"))){
+      Serial.println("AT+SAPBR=1,1");
+      Serial.flush();
+
+      cflg=true;
+      attempt++;
+      delay(1);
+    }
+    if(attempt>2)break;
+  }
+  attempt=0;
+  wdt_reset();
+
+  if(aflg&&bflg&&cflg){
+    return true; 
+  }
+
+  else {
+
+    Sim800.println("AT+SAPBR=0,1");
+    Sim800.flush();
+
+    return false;
+  }
+
+}
+
+//##############################################################################
+//##############################################################################
+// Function name rejectincomingcalls()
+// Function type boolean
+
+boolean rejectincomingCalls(){
+
+  if(Sim800SendCommand(F("AT+GSMBUSY=1"))){
+    delay(100);
+    return true;
+  }
+  else{
+    delay(100);
+    return false;
+  }
+
+}
+//##############################################################################
+//##############################################################################
+// Function name checkandregister()
+// Function type boolean
+
+boolean checkandregister(){
+  
+  String reply="";
+
+  Sim800.println("AT+CREG?");
+  Sim800.flush();
+ 
+  while(Sim800.available()){
+    char m=Sim800.read();
+    reply+=m;
+    delay(2);              
+  }
+  
+  wait++;
+  
+  if(reply.indexOf(",1")){
+    //Serial.println("Network Registration already DONE");
+    //Serial.flush();
+    wait=0;
+    return true;
+  }
+  else {
+    delay(2000);
+    if (wait>3){
+      wdt_reset();
+      delay(1000);
+      Sim800.println("AT+CFUN=1,1");
+      Sim800.flush();
+      delay(3000);
+    }
+    checkandregister();
+  }
+
+
+}
+
+//##############################################################################
+//##############################################################################
+// Function name allowincomingCalls()
+// Function type boolean
+
+
+//##############################################################################
+//##############################################################################
+// Function name HTTPINIT()
+// Function type boolean
+
+boolean HTTPINIT(){
+
+  if( Sim800SendCommand( F("AT+HTTPINIT") ) ){
+    return true;
+  }
+  else{
+    return false;
+  }
+
+}
+
+//##############################################################################
+//##############################################################################
+// Function name HTTPTERM()
+// Function type boolean
+
+boolean HTTPTERM(){
+
+  if( Sim800SendCommand( F("AT+HTTPTERM") ) ){
+    return true;
+  }
+  else{
+    return false;
+  }
+
+}
+
+//##############################################################################
+//##############################################################################
+// Function name get_enable_status()
+// Function type void
+
+
+void get_enable_status(){
+
+  if(digitalRead(FaultENpin)==HIGH){
+    FaultEN = true;
+  }
+  else{
+    FaultEN = false;
+  }
+  if(digitalRead(FireENpin)==HIGH){
+    FireEN = true;
+  }
+  else{
+    FireEN = false;
+  }
+  if(digitalRead(CoverENpin)==HIGH){
+    CoverEN = true;
+  }
+  else{
+    CoverEN = false;
+  }
+
+
+}
+
+//##############################################################################
+//##############################################################################
+// Function name sendGPRS()
+// Function type void
+
+void sendGPRS(int olay, String ID ){
+  int temp=0;
+  long int count=0;
+  String feedbacks="";
+  
+
+  while(temp<gprs_limit){
+
+    while(true){
+      temp++;
+      // GPRS connection setup
+      if( openGPRS() ){
+        Serial.println("GPRS is connected...");
+        Serial.flush();
+      }
+      else{
+        Serial.println("GPRS is NOT connected...");
+        Serial.flush();
+        break;
+      }
+      wdt_reset();
+      delay(4000);
+
+      // HTTP INITIALIZATION
+
+      HTTPINIT();
+      delay(4000);
+      wdt_reset();
+      // HTTP SSL
+      if(   Sim800SendCommand(F("AT+HTTPSSL=0"))      ){
+        //Serial.println("HTTP SSL is identified...");
+        //Serial.flush();
+        
+      }
+      else{
+        //Serial.println("HTTP SSL failed...");
+        //Serial.flush();
+        Sim800.println("AT+SAPBR=0,1");
+        Sim800.flush();
+        break;
+      }
+
+      wdt_reset();
+      delay(2000);
+      
+      Sim800.print(  "AT+HTTPPARA=\"URL\",\"http://xx.xxx.xxx.xxx/xxxxxxx.php?id="+ ID + "&d=Alarm&l=%20" );
+      if(olay==0) {Sim800.print("HATA%20DURUMU");}
+      else if(olay==1) {Sim800.print("YANGIN%20DURUMU");}
+      else if(olay==2) {Sim800.print("ELEKTRIK%20KESINTISI");}
+      else if(olay==3) {Sim800.print("YANGIN%20BITTI");}
+      else if(olay==4) {Sim800.print("HATA%20BITTI"  );}
+      else if(olay==5) {Sim800.print("ELEKTRIK%20GELDI");}
+      else if(olay==6) {Sim800.print("KAPAK%20ACILDI");}
+      else if(olay==7) {Sim800.print("KAPAK%20KAPANDI");}
+      else if(olay==8) {Sim800.print("RESET%20ATILDI");}
+      else if(olay==9) {Sim800.print("YANGIN%20"); Sim800.print(RS485buffer);}
+      else {            Sim800.print("HATA%20");   Sim800.print(RS485buffer);}
+      Sim800.println( "%20&p=100&v=7.77&rssi=7&t=alarm\"");
+      Sim800.flush();
+      delay(100);/*
+      wdt_reset();
+      Serial.println(  "AT+HTTPPARA=\"URL\",\"http://xx.xxx.xxx.xxx/xxxxxxx.php?id="+ ID +"&d=Alarm&l=%20");
+      if(olay==0) Serial.print("HATA%20DURUMU");
+      if(olay==1) Serial.print("YANGIN%20DURUMU");
+      if(olay==2) Serial.print("ELEKTRIK%20KESINTISI");
+      if(olay==3) Serial.print("YANGIN%20BITTI");
+      if(olay==4) Serial.print("HATA%20BITTI"  );
+      if(olay==5) Serial.print("ELEKTRIK%20GELDI");
+      if(olay==6) Serial.print("KAPAK%20ACILDI");
+      if(olay==7) Serial.print("KAPAK%20KAPANDI");
+      if(olay==8) Serial.print("RESET%20ATILDI");
+      Serial.println("%20&p=100&v=7.77&rssi=7&t=alarm\"");
+      Serial.flush();*/
+      wdt_reset();
+      delay(1000);
+      wdt_reset();
+      // HTTP ACTION
+
+      Sim800.println("AT+HTTPACTION=0");
+      Sim800.flush();
+      wdt_reset();
+
+      delay(100);
+
+      while(true){
+
+        while(Sim800.available()){
+          char m=Sim800.read();
+          feedbacks+=m;
+          delay(2);              
+        }
+        if(feedbacks.indexOf(",200")>=0){
+          wdt_reset();
+          //Serial.println("YAKALADIM ONU...");
+          //Serial.flush();
+          break;
+        }
+        count++;
+        delay(1);
+        delayMicroseconds(1000);
+
+        if((count>10000)|| feedbacks.indexOf(",60")>=0){
+          wdt_reset();
+          //Serial.println("TCP/IP packet is NOT delivered");
+          //Serial.flush();
+          break;
+
+        }
+        feedbacks.remove(0);
+        if(count%2000==0){
+          wdt_reset();
+        }
+   
+      }
+      wdt_reset();
+      Serial.println(feedbacks);
+      Serial.flush();
+      wdt_reset();
+      delay(500);
+      // GPRS Connection CLOSED
+      if(Sim800SendCommand(  F("AT+SAPBR=0,1")   ) ){
+        wdt_reset();
+        //Serial.println("GPRS is closed...");
+        //Serial.flush();
+        temp=gprs_limit;
+        wdt_reset();
+        break;
+      }
+      else{
+        wdt_reset();
+        //Serial.println("GPRS cannot be closed...");
+        //Serial.flush();
+        Sim800SendCommand(  F("AT+SAPBR=0,1")   );
+        wdt_reset();
+        break;
+      }
+      wdt_reset();
+      delay(2000);
+
+    }
+  }
+
+}
